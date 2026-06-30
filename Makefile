@@ -48,6 +48,9 @@ migrate-action:
     -path /migrations \
     $(action) $(num)
 
+seed:
+	@docker compose exec postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -f /seeds/seed.sql
+
 
 .PHONY: up down
 
