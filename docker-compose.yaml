@@ -1,29 +1,100 @@
 services:
-  postgres:
+  postgres-orders:
     image: postgres:15.18-bookworm
-    container_name: postgres-container
+    container_name: postgres-orders
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_DB=orders
     ports:
       - "5432:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - orders_data:/var/lib/postgresql/data
       - ${PROJECT_ROOT}/seeds:/seeds
     restart: unless-stopped
-
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d orders"]
+      interval: 5s
+      retries: 10
       timeout: 5s
-  migration:
-    image: migrate/migrate:v4.19.0
-    container_name: migration-container
+
+  postgres-storage:
+    image: postgres:15.18-bookworm
+    container_name: postgres-storage
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=storage
+    ports:
+      - "5433:5432"
     volumes:
-      - ${PROJECT_ROOT}/migrations:/migrations
+      - storage_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d storage"]
+      interval: 5s
+      retries: 10
+      timeout: 5s
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      retries: 10
+      timeout: 5s
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    container_name: order-service
+    environment:
+      - DB_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-orders:5432/orders?sslmode=disable
+      - PORT=8080
+      - JWT_SECRET=${JWT_SECRET}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - STORAGE_GRPC_ADDR=storage-service:9091
+    ports:
+      - "8080:8080"
     depends_on:
-      - postgres
+      postgres-orders:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      storage-service:
+        condition: service_started
+    restart: unless-stopped
+
+  storage-service:
+    build:
+      context: .
+      dockerfile: storage-service/Dockerfile
+    container_name: storage-service
+    environment:
+      - DB_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres-storage:5432/storage?sslmode=disable
+      - PORT=8081
+      - JWT_SECRET=${JWT_SECRET}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      - GRPC_PORT=9091
+    ports:
+      - "8081:8081"
+      - "9091:9091"
+    depends_on:
+      postgres-storage:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
-  db_data:
+  orders_data:
+  storage_data:

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package storage.v1;
+
+option go_package = "github.com/qxblvde/CarService/proto/storagepb;storagepb";
+
+service CarStock {
+  rpc ListCars(ListCarsRequest) returns (ListCarsResponse);
+  rpc GetCar(GetCarRequest) returns (Car);
+}
+
+message Car {
+  string id = 1;
+  string brand = 2;
+  string model = 3;
+  int32 year = 4;
+  int64 price = 5;
+}
+
+message ListCarsRequest {}
+
+message ListCarsResponse {
+  repeated Car cars = 1;
+}
+
+message GetCarRequest {
+  string id = 1;
+}
